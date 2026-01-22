@@ -322,6 +322,7 @@ CREATE TABLE phi.extracted_evidence (
 );
 
 COMMIT;
+```
 
 
 ## API Endpoints and Requests
