@@ -1,0 +1,58 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: basys_postgres
+    environment:
+      POSTGRES_USER: basys
+      POSTGRES_PASSWORD: basys
+      POSTGRES_DB: basys
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    container_name: basys_redis
+    ports:
+      - "6379:6379"
+
+  api:
+    build:
+      context: ./api
+    container_name: basys_api
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://basys:basys@postgres:5432/basys
+      REDIS_URL: redis://redis:6379
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USERNAME: basys
+      DB_PASSWORD: basys
+      DB_NAME: basys
+      DB_SSL: "false"
+
+    ports:
+      - "4000:4000"
+
+  worker:
+    build:
+      context: ./worker
+    container_name: basys_worker
+    env_file:
+      - ./worker/.env
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      DATABASE_URL: postgres://basys:basys@postgres:5432/basys
+      REDIS_URL: redis://redis:6379
+
+
+volumes:
+  postgres_data:

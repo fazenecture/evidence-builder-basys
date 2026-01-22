@@ -1,0 +1,109 @@
+# ================================
+# Python
+# ================================
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# ================================
+# Packaging / Distribution
+# ================================
+build/
+dist/
+develop-eggs/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ================================
+# PyInstaller
+# ================================
+*.manifest
+*.spec
+
+# ================================
+# Testing / Coverage
+# ================================
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+pytest_cache/
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# ================================
+# Jupyter / IPython
+# ================================
+.ipynb_checkpoints
+profile_default/
+ipython_config.py
+
+# ================================
+# Environment / Secrets
+# ================================
+.env.*
+*.env
+secrets.yaml
+secrets.json
+
+# ================================
+# Logs
+# ================================
+*.log
+logs/
+
+# ================================
+# IDEs / Editors
+# ================================
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# ================================
+# OS Files
+# ================================
+.DS_Store
+Thumbs.db
+
+# ================================
+# Type Checking
+# ================================
+.mypy_cache/
+.pyre/
+.pytype/
+
+# ================================
+# Documentation
+# ================================
+docs/_build/
+
+# ================================
+# Temporary files
+# ================================
+*.tmp
+*.swp
+*.bak
