@@ -2,53 +2,197 @@
 
 ## Overview
 
-This project implements a Prior Authorization processing system that ingests clinical documents, extracts structured medical evidence, evaluates a simplified medical policy, and produces an auditable Evidence Pack.
+This project implements a Prior Authorization processing system that ingests clinical documents, extracts structured medical evidence, evaluates a simplified medical policy, and produces an auditable Evidence Pack. 
 
-The system mirrors a real world healthcare workflow and emphasizes correctness, auditability, idempotency, and reliability under failure.
-
-Document ingestion is synchronous. Evidence extraction and policy evaluation are handled asynchronously using a background worker.
+The system mirrors a real world healthcare workflow and emphasizes correctness, auditability, idempotency, and reliability under failure. Document ingestion is synchronous. Evidence extraction and policy evaluation are handled asynchronously using a background worker.
 
 ## High Level Architecture
 
-The system consists of three core components.
+* Three core system components
 
-The API service is built using Node.js and TypeScript. It validates requests, enforces idempotency, ingests documents, and exposes read APIs.
+* API Service
+  * Built using Node.js and TypeScript
+  * Validates incoming requests
+  * Enforces idempotency
+  * Ingests documents
+  * Exposes read only APIs
 
-A Redis backed queue decouples ingestion from processing. It enables retries, failure isolation, and backpressure handling.
+* Redis Queue
+  * Decouples ingestion from processing
+  * Enables retries
+  * Provides failure isolation
+  * Handles backpressure
 
-A Python worker service consumes jobs from Redis. It performs evidence extraction, evaluates medical policy rules, generates Evidence Packs, updates workflow state, and writes audit logs.
+* Worker Service
+  * Implemented in Python
+  * Consumes jobs from Redis
+  * Extracts medical evidence
+  * Evaluates policy rules
+  * Generates Evidence Packs
+  * Updates workflow state
+  * Writes audit logs
 
-PostgreSQL is the system of record for workflow state, audit logs, and protected health information.
+* PostgreSQL
+  * System of record
+  * Stores workflow state
+  * Stores audit logs
+  * Stores protected health information
 
 ![alt text](image.png)
 
-## Domain Driven Architecture
+## Core Concepts
 
-The codebase follows a domain driven architecture with clear ownership boundaries.
+### PA Request
 
+* Represents a single prior authorization workflow
+* Acts as the central aggregate of the system
 
+* Identifiers
+  * External identifier
+    * request_uuid
+    * UUID exposed to external consumers
+  * Internal identifier
+    * Integer primary key for internal relationships
+
+* Lifecycle states
+  * CREATED
+    * Request created and ready for document ingestion
+  * PROCESSING
+    * Documents ingested and processing in progress
+  * EVIDENCE_READY
+    * Evidence extraction and policy evaluation completed
+  * NEEDS_MORE_INFO
+    * Required medical evidence missing or incomplete
+  * FAILED
+    * Processing failed after retry exhaustion
+
+### Document
+
+* Represents a clinical document uploaded against a PA Request
+* Immutable once ingested
+
+* Key characteristics
+  * Associated with exactly one PA Request
+  * Idempotent uploads enforced using
+    * pa_request_id
+    * idempotency_key
+  * Processed asynchronously
+  * Ingestion and processing are decoupled
+
+### Evidence Pack
+
+* Derived artifact created after processing
+* Strict one to one relationship with a PA Request
+
+* Contains
+  * Structured extracted medical evidence
+  * Final decision and human readable explanation
+  * Traceability sources linked to documents
+  * Processing metadata for audit and debugging
+
+### Processing Jobs
+
+* Tracks execution of background processing
+* One job per document processing workflow
+
+* Responsibilities
+  * Tracks worker execution attempts
+  * Enables controlled retries
+  * Routes failed jobs to dead letter queue
+  * Provides full traceability and auditability
+
+### Audit Logs
+
+* Immutable records of system activity
+* Designed to be safe for external review
+
+* Key properties
+  * Append only
+  * PHI safe by design
+  * Covers major actions including
+    * PA request creation
+    * Document ingestion
+    * Processing state transitions
+    * Final decisions
+
+* Enables compliance, debugging, and operational transparency
+
+## Domain Responsibilities
+
+This section outlines the responsibilities and boundaries of each major domain in the system.
+
+```
+src/
+├── pa-requests/
+│   ├── controller.ts
+│   ├── service.ts
+│   ├── db.ts
+│   ├── routes.ts
+│   ├── middleware.ts
+│   └── types/
+│
+├── documents/
+│   ├── controller.ts
+│   ├── service.ts
+│   ├── db.ts
+│   ├── routes.ts
+│   ├── middleware.ts
+│   └── types/
+│
+├── routes/
+│   └── index.routes.ts
+│
+├── config/
+│   ├── postgres.ts
+│   └── redis.ts
+│
+├── utils/
+│   ├── logger.ts
+│   ├── custom.error.ts
+│   └── error.handler.ts
+```
 
 ### PA Requests Domain
 
-This domain manages the lifecycle of a prior authorization request.
-It handles request creation, status transitions, and read APIs.
-It does not interact with protected health information.
+* Lifecycle management of prior authorization requests
+* Status transitions such as CREATED, PROCESSING, EVIDENCE_READY, NEEDS_MORE_INFO, and FAILED
+* Exposure of PA request status to external consumers
+* No access to protected health information
 
 ### Documents Domain
 
-This domain manages document ingestion.
+* Idempotent document ingestion
+* Validation and persistence of document metadata
+* Dispatching asynchronous processing jobs
+* PHI storage delegated exclusively to the phi schema
 
-It enforces idempotency, persists document metadata, stores document text, and dispatches processing jobs to the queue.
+### Worker Domain  
+Python Microservice
 
-### Worker Domain
+* Evidence extraction
+* Policy evaluation
+* Evidence Pack creation
+* Retry and dead letter queue handling
+* Audit logging for processing steps
 
-The worker domain performs evidence extraction and policy evaluation.
+### Domain Ownership Model
 
-It is responsible for retries, dead letter handling, Evidence Pack creation, and audit logging.
+Each domain owns
 
-Each domain owns its controllers, services, repositories, and types.
+* Its routes
+* Its controllers handling request and response mapping only
+* Its services containing business logic
+* Its repositories responsible for database access
+* Its types and enums
 
-Controllers are thin. Services contain business logic. Database access is isolated in repository layers.
+### Architectural Guarantees
+
+This structure ensures
+
+* Low coupling between domains
+* High cohesion within domains
+* Safe and independent evolution of individual domains
+
 
 ## Database Design
 
@@ -227,119 +371,93 @@ curl http://localhost:4000/api/v1/audit?request_uuid={request_uuid}
 
 ## Processing Flow
 
-A document upload stores metadata and document text.
-
-A processing job is enqueued in Redis.
-
-The worker consumes the job and tracks attempts in processing_jobs.
-
-Evidence is extracted and policy rules are evaluated.
-
-An Evidence Pack is generated.
-
-PA request status is updated.
-
-Audit logs are written for all major state transitions.
+* Document upload stores metadata and document text
+* Processing job is enqueued in Redis
+* Worker consumes the job
+* Worker tracks execution attempts in processing_jobs
+* Evidence is extracted from document content
+* Medical policy rules are evaluated
+* Evidence Pack is generated
+* PA request status is updated
+* Audit logs are written for all major state transitions
 
 ## Retry and Dead Letter Handling
 
-Processing failures are retried up to a configured maximum.
-
-Retryable failures are requeued with incremented attempt counts.
-
-Once retries are exhausted, the job is sent to a dead letter queue.
-
-Dead letter jobs are persisted for investigation and auditing.
+* Processing failures are retried up to a configured maximum
+* Retryable failures are requeued with incremented attempt counts
+* Jobs exceeding retry limits are sent to the dead letter queue
+* Dead letter jobs are persisted for investigation and auditing
 
 ## Security and PHI Handling
 
-Protected health information is isolated in the phi schema.
-
-Sensitive data is never returned from audit APIs.
-
-In production, PHI fields should be encrypted at rest using envelope encryption.
+* Protected health information is isolated in the phi schema
+* Sensitive data is never returned from audit APIs
+* In production, PHI fields should be encrypted at rest
+* Envelope encryption should be used for key management
 
 ## Logging Monitoring and Observability
 
 ### What Exists
 
-Structured logs in API and worker services.
-
-Audit logs stored in the database.
-
-Trace IDs associated with processing jobs.
+* Structured logs in API and worker services
+* Audit logs stored in the database
+* Trace IDs associated with processing jobs
 
 ### What Was Omitted Due to Time Constraints
 
-Centralized log aggregation systems.
-
-Automated alerting pipelines.
-
-Distributed tracing dashboards.
-
-These were intentionally omitted to focus on correctness and core system design.
+* Centralized log aggregation systems
+* Automated alerting pipelines
+* Distributed tracing dashboards
+* These were intentionally omitted to prioritize correctness and core system design
 
 ## What Can Be Improved Further
 
 ### Reduce Database Calls
 
-Batch audit log writes.
-
-Collapse multiple status updates into single transactions.
-
-Use RETURNING clauses to avoid follow up queries.
+* Batch audit log writes
+* Collapse multiple status updates into single transactions
+* Use RETURNING clauses to avoid follow up queries
 
 ### Introduce Caching Layer
 
-Cache PA request status.
-
-Cache processing job state.
-
-Use Redis as a read through cache and short lived state store.
-
-This reduces read load on PostgreSQL.
+* Cache PA request status
+* Cache processing job state
+* Use Redis as a read through cache
+* Use Redis as a short lived processing state store
+* Reduce read load on PostgreSQL
 
 ### PHI Encryption
 
-Encrypt document_text and extracted_evidence columns.
-
-Use envelope encryption with KMS managed keys.
-
-This enables zero trust database access.
+* Encrypt document_text columns
+* Encrypt extracted_evidence columns
+* Use envelope encryption with KMS managed keys
+* Enable zero trust database access
 
 ### Worker as Independent Microservice
 
-Deploy the worker independently.
-
-Autoscale based on queue depth.
-
-Allow independent release cycles.
+* Deploy worker independently
+* Autoscale based on queue depth
+* Allow independent release cycles
 
 ### Enhanced ETL and NLP Pipeline
 
-Current extraction is deterministic.
-
-Future improvements include multi stage ETL pipelines.
-
-LLM based extraction with guardrails.
-
-Confidence scoring and provenance tracking.
-
-This enables AI readiness without redesign.
+* Current extraction is deterministic
+* Introduce multi stage ETL pipelines
+* Add LLM based extraction with guardrails
+* Add confidence scoring
+* Add provenance tracking
+* Enable AI readiness without architectural redesign
 
 ## Secure Document Handling Design Note
 
-This assignment stores document text directly for simplicity.
-
-In production systems, documents should be stored in object storage.
-
-Access should be via pre signed URLs.
-
-The API should never expose bucket paths.
-
-The worker should fetch documents only when required.
-
-This prevents bucket wide access leaks, accidental PHI exposure, and long lived credentials.
+* Document text is stored directly for assignment simplicity
+* In production, documents should be stored in object storage
+* Access should be provided via pre signed URLs
+* API should never expose bucket paths
+* Worker should fetch documents only when required
+* Prevent bucket wide access leaks
+* Prevent accidental PHI exposure
+* Prevent long lived credentials
 
 ## Running Locally
 
@@ -347,12 +465,21 @@ This prevents bucket wide access leaks, accidental PHI exposure, and long lived 
 docker-compose up -d --build
 ```
 
-The API runs on port 4000.
+### Services
 
-PostgreSQL and Redis are started automatically.
+* API available at [http://localhost:4000](http://localhost:4000)
+
+* PostgreSQL available at localhost:5434
+
+* Redis available at localhost:6379
+
+* PostgreSQL and Redis are started automatically
 
 ## Summary
 
-This system models a realistic prior authorization workflow with strong emphasis on auditability, reliability, and correctness.
-
-The architecture is intentionally simple yet extensible, allowing future enhancements without major redesign.
+* Models a realistic prior authorization workflow
+* Strong emphasis on auditability
+* Strong emphasis on reliability
+* Strong emphasis on correctness
+* Architecture is simple but extensible
+* Future enhancements possible without major redesign
