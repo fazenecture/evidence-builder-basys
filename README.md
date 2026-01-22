@@ -475,12 +475,3 @@ docker-compose up -d --build
 * Redis available at localhost:6379
 
 * PostgreSQL and Redis are started automatically
-
-## Summary
-
-* Models a realistic prior authorization workflow
-* Strong emphasis on auditability
-* Strong emphasis on reliability
-* Strong emphasis on correctness
-* Architecture is simple but extensible
-* Future enhancements possible without major redesign
